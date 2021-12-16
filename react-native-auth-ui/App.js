@@ -22,6 +22,7 @@ export default function App() {
             ...prevState,
             isSignout: false,
             userToken: action.token,
+            expiresAt: action.expires
           };
         case 'SIGN_OUT':
           return {
@@ -29,46 +30,31 @@ export default function App() {
             isSignout: true,
             userToken: null,
           };
+        case 'ADD_TIME':
+          return {
+            ...prevState,
+            expiresAt: action.expires
+          }
       }
     },
     {
       isLoading: true,
       isSignout: false,
       userToken: null,
+      expiresAt: null,
     }
   );
 
-  React.useEffect(() => {
-    // Fetch the token from storage then navigate to our appropriate place
-    const bootstrapAsync = async () => {
-      let userToken;
-
-      try {
-        // Restore token stored in `SecureStore` or any other encrypted storage
-        // userToken = await SecureStore.getItemAsync('userToken');
-      } catch (e) {
-        // Restoring token failed
-      }
-
-      // After restoring token, we may need to validate it in production apps
-
-      // This will switch to the App screen or Auth screen and this loading
-      // screen will be unmounted and thrown away.
-      dispatch({ type: 'RESTORE_TOKEN', token: userToken });
-    };
-
-    bootstrapAsync();
-  }, []);
 
   const authContext = React.useMemo(
     () => ({
-      signIn: async (data) => {
+      signIn: async (expiresat) => {
         // In a production app, we need to send some data (usually username, password) to server and get a token
         // We will also need to handle errors if sign in failed
         // After getting token, we need to persist the token using `SecureStore` or any other encrypted storage
         // In the example, we'll use a dummy token
 
-        dispatch({ type: 'SIGN_IN', token: 'dummy-auth-token' });
+        dispatch({ type: 'SIGN_IN', token: 'dummy-auth-token', expires: expiresat });
       },
       signOut: () => dispatch({ type: 'SIGN_OUT' }),
       signUp: async (data) => {
@@ -79,12 +65,15 @@ export default function App() {
 
         dispatch({ type: 'SIGN_IN', token: 'dummy-auth-token' });
       },
+      addTime: (expiresat) => {
+        dispatch({ type: 'ADD_TIME', expires: expiresat })
+      }
     }),
     []
   );
 
   return (
-    <AuthContext.Provider value={authContext}>
+    <AuthContext.Provider value={{ actions: authContext, expiry: state.expiresAt }}>
       <NavigationContainer>
         <Stack.Navigator>
           {state.userToken == null ? (

@@ -10,6 +10,8 @@ const SignUpScreen = ({ navigation }) => {
         phonenumber: '',
     })
 
+    const [errMessage, setErrMessage] = useState("")
+
     const handleUsername = (val) => {
         updateData({
             ...data,
@@ -38,18 +40,31 @@ const SignUpScreen = ({ navigation }) => {
         })
     }
 
+    function validate() {
+        if (data.phonenumber.length != 10) {
+            setErrMessage("This is not a valid phone number")
+            return false
+        }
+    }
+
     const handleSignUp = () => {
         if (data.password !== data.reEnterPassword) {
             return
         }
+        let valid = validate()
+        if (!valid) return
         const requestOptions = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: data.username, password: data.password, phonenumber: data.phonenumber }),
         };
         fetch("http://10.0.2.2:8080/signup", requestOptions)
-            .then(async response => {
-                navigation.navigate("SplashScreen")
+            .then(response => {
+                if (response.status == 400) {
+                    setErrMessage("This username already exists, please try another")
+                } else {
+                    navigation.navigate("SplashScreen")
+                }
             })
             .catch(error => {
                 alert('Error contacting server', error);
@@ -83,6 +98,7 @@ const SignUpScreen = ({ navigation }) => {
                 containerStyle={styles.inputContainer}
                 onChangeText={(val) => handlePhoneNumber(val)}
                 leftIcon={{ type: 'font-awesome', name: 'mobile', style: { marginRight: 10 } }}
+                errorMessage={errMessage}
             />
             <Button containerStyle={styles.buttonContainer} title="Sign Up" onPress={() => handleSignUp()} />
         </View>

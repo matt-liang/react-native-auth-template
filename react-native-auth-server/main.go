@@ -10,7 +10,6 @@ import (
 
 	"github.com/golang-jwt/jwt"
 	"github.com/gorilla/mux"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
@@ -30,6 +29,10 @@ type Claims struct {
 	jwt.StandardClaims
 }
 
+type Expiration struct {
+	ExpiresAt int64 `json:"expiresat" bson:"expiresat"`
+}
+
 func SignUp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("content-type", "application/json")
 	var creds Credentials
@@ -38,6 +41,17 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	// Check to see if the username already exists in our collection
+	collection := client.Database("AuthLabs").Collection("CredentialSet")
+	_, err = findUser(w, r, *collection, creds.Username)
+	// If the err is not ErrNoDocuments, that means we have found the request username in our
+	// collection, and we write a http status client error
+	if err != mongo.ErrNoDocuments {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	// Salt and hash the password and replace the password key value pair
 	// decoded into creds struct
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(creds.Password), 8)
@@ -45,7 +59,6 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 	}
 	creds.Password = string(hashedPassword)
-	collection := client.Database("AuthLabs").Collection("CredentialSet")
 	result, err := collection.InsertOne(context.TODO(), creds)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -55,6 +68,7 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("content-type", "application/json")
 	var creds Credentials
 	err := json.NewDecoder(r.Body).Decode(&creds)
 	if err != nil {
@@ -62,13 +76,10 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var storedCreds Credentials
 	collection := client.Database("AuthLabs").Collection("CredentialSet")
-	err = collection.FindOne(context.TODO(), bson.M{"username": creds.Username}).Decode(&storedCreds)
+	storedCreds, err := findUser(w, r, *collection, creds.Username)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{ "message": "` + err.Error() + `" }`))
-		return
+		log.Fatal(err)
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(storedCreds.Password), []byte(creds.Password))
@@ -102,6 +113,13 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		Value:   tokenString,
 		Expires: expirationTime,
 	})
+
+	var expiry Expiration
+	expiry.ExpiresAt = expirationTime.UnixMilli()
+
+	// We send the unix expiration time in JSON in response writer
+	// For use on the front end
+	json.NewEncoder(w).Encode(expiry)
 }
 
 func AuthorizedHandler(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +140,6 @@ func AuthorizedHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Get JWT string from cookie
 	tokenStr := c.Value
-
 	claims := &Claims{}
 
 	// Parse the JWT string and store result in 'claims'
@@ -173,12 +190,7 @@ func RefreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if time.Unix(claims.ExpiresAt, 0).Sub(time.Now()) > 30*time.Second {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	expirationTime := time.Now().Add(1 * time.Minute)
+	expirationTime := time.Now().Add(30 * time.Second)
 	claims.ExpiresAt = expirationTime.Unix()
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	newTokenStr, err := newToken.SignedString(jwtKey)
@@ -194,6 +206,14 @@ func RefreshToken(w http.ResponseWriter, r *http.Request) {
 		Value:   newTokenStr,
 		Expires: expirationTime,
 	})
+
+	w.Header().Set("content-type", "application/json")
+	var expiry Expiration
+	expiry.ExpiresAt = expirationTime.UnixMilli()
+
+	// We send the unix expiration time in JSON in response writer
+	// For use on the front end
+	json.NewEncoder(w).Encode(expiry)
 }
 
 func main() {

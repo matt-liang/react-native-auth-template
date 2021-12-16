@@ -12,7 +12,8 @@ const SignInScreen = ({ navigation }) => {
 
     const [invalidUserMsg, setInvalidUserMsg] = useState("")
 
-    const { signIn } = React.useContext(AuthContext);
+    const Context = React.useContext(AuthContext)
+    const actions = Context.actions
 
     const handleUserName = (val) => {
         updateData({
@@ -35,14 +36,8 @@ const SignInScreen = ({ navigation }) => {
             body: JSON.stringify({ username: data.username, password: data.password }),
         };
         fetch("http://10.0.2.2:8080/login", requestOptions)
-            .then(response => {
-                console.log(response.status)
-                if (response.status === 200) {
-                    signIn()
-                } else {
-                    setInvalidUserMsg("This is not a valid user / password combination")
-                }
-            })
+            .then(response => response.status === 200 && response.json())
+            .then(data => actions.signIn(data.expiresat))
             .catch((error) => {
                 console.error('Error:', error);
             });
